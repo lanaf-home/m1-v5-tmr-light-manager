@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>L.A's MonsGeek M1 V5 TMR Light Manager</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Title bar */
+  .title-bar {
+    background: linear-gradient(90deg, #0f3460, #e94560, #5eead4, #e94560, #0f3460);
+    background-size: 300% 100%;
+    animation: shimmer 6s ease-in-out infinite;
+    padding: 14px 0;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .title-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: glint 3s linear infinite;
+  }
+  .title-bar h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(233,69,96,0.6), 0 0 24px rgba(94,234,212,0.3);
+    margin: 0;
+    position: relative;
+    z-index: 1;
+  }
+  @keyframes shimmer {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  @keyframes glint {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* Layout */
+  .layout { display: flex; height: 100vh; flex-direction: column; }
+  .panels { display: flex; flex: 1; min-height: 0; }
+
+  /* ── Left Panel ── */
+  .left-panel {
+    width: 270px;
+    min-width: 270px;
+    background: #16213e;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+  }
+  .left-panel h2 {
+    font-size: 15px;
+    color: #e94560;
+    padding: 18px 16px 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* Watcher row */
+  .watcher-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px 12px;
+    border-bottom: 1px solid #333;
+    margin-bottom: 4px;
+  }
+  .watcher-btn {
+    padding: 4px 12px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    background: #0f3460;
+    color: #aaa;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .watcher-btn.active { border-color: #5eead4; color: #5eead4; }
+  .watcher-status { font-size: 11px; color: #666; }
+
+  /* Program list */
+  .program-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+  .prog-item {
+    display: flex;
+    align-items: center;
+    padding: 9px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 3px;
+    border: 1px solid transparent;
+    transition: background 0.12s;
+  }
+  .prog-item:hover { background: #0f3460; }
+  .prog-item.selected { background: #0f3460; border-color: #e94560; }
+  .prog-item .prog-info { flex: 1; min-width: 0; }
+  .prog-item .prog-name {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .prog-item .prog-effect {
+    font-size: 11px;
+    color: #777;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .prog-item .prog-remove {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .prog-item .prog-remove:hover { color: #e94560; }
+  .prog-item.default-item .prog-name { color: #5eead4; }
+
+  /* Add form */
+  .add-form {
+    padding: 10px 12px;
+    border-top: 1px solid #333;
+    display: flex;
+    gap: 6px;
+  }
+  .add-form input {
+    flex: 1;
+    padding: 7px 10px;
+    background: #0f3460;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+  }
+  .add-form input::placeholder { color: #555; }
+  .add-form input:focus { border-color: #e94560; }
+  .add-form button {
+    padding: 7px 14px;
+    background: #0f3460;
+    color: #e94560;
+    border: 1px solid #e94560;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 13px;
+  }
+  .add-form button:hover { background: #1a1a4e; }
+
+  /* ── Right Panel ── */
+  .right-panel {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 30px;
+    overflow-y: auto;
+  }
+  .right-content { width: 100%; max-width: 480px; }
+  .right-content h1 {
+    text-align: center;
+    font-size: 20px;
+    margin-bottom: 4px;
+    color: #e94560;
+  }
+  .right-subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 24px;
+  }
+
+  label {
+    display: block;
+    font-size: 13px;
+    color: #aaa;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .section { margin-bottom: 22px; }
+
+  select {
+    width: 100%;
+    padding: 10px 14px;
+    background: #0f3460;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+    outline: none;
+  }
+  select:focus { border-color: #e94560; }
+
+  /* Sliders */
+  .slider-row { display: flex; align-items: center; gap: 12px; }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-val {
+    min-width: 28px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 16px;
+    color: #e94560;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 8px;
+    border-radius: 4px;
+    background: #0f3460;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: #e94560;
+    cursor: pointer;
+    border: 2px solid #fff;
+  }
+
+  /* Color section */
+  .color-section { display: flex; flex-direction: column; gap: 10px; }
+  .color-mode-toggle { display: flex; gap: 8px; margin-bottom: 8px; }
+  .color-mode-toggle button {
+    flex: 1;
+    padding: 8px;
+    border: 2px solid #333;
+    border-radius: 8px;
+    background: #0f3460;
+    color: #aaa;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .color-mode-toggle button.active {
+    border-color: #e94560;
+    color: #fff;
+    background: #1a1a4e;
+  }
+  .color-picker-area {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    border-radius: 8px;
+    cursor: crosshair;
+    overflow: hidden;
+  }
+  .color-picker-dot {
+    position: absolute;
+    width: 16px; height: 16px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
+  }
+  .hue-bar {
+    width: 100%;
+    height: 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+  }
+  .hue-bar-thumb {
+    position: absolute;
+    top: -2px;
+    width: 8px; height: 24px;
+    background: #fff;
+    border-radius: 3px;
+    pointer-events: none;
+    transform: translateX(-50%);
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
+  }
+  .color-preview { display: flex; align-items: center; gap: 12px; }
+  .color-swatch {
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    border: 2px solid #555;
+  }
+  .rgb-inputs { display: flex; gap: 8px; }
+  .rgb-inputs input {
+    width: 60px;
+    padding: 6px 8px;
+    background: #0f3460;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  /* Load button */
+  .load-btn {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, #e94560, #c62a47);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    letter-spacing: 1px;
+    margin-top: 6px;
+  }
+  .load-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(233,69,96,0.4);
+  }
+  .load-btn:active { transform: translateY(0); }
+
+  .status {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 13px;
+    min-height: 20px;
+    color: #5eead4;
+  }
+  .status.error { color: #e94560; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="title-bar">
+    <h1>L.A's MonsGeek M1 V5 TMR Light Manager</h1>
+  </div>
+  <div class="panels">
+  <!-- Left Panel: Program List -->
+  <div class="left-panel">
+    <h2>Programs</h2>
+    <div class="watcher-row">
+      <span style="font-size:12px; color:#aaa;">Watcher</span>
+      <button id="watcherToggle" class="watcher-btn" onclick="toggleWatcher()">Enable</button>
+      <span id="watcherStatus" class="watcher-status"></span>
+    </div>
+    <div class="program-list" id="programList"></div>
+    <div class="add-form">
+      <input type="text" id="exeInput" placeholder="program.exe" onkeydown="if(event.key==='Enter')addProgram()">
+      <button onclick="addProgram()">Add</button>
+    </div>
+  </div>
+
+  <!-- Right Panel: Effect Settings -->
+  <div class="right-panel">
+    <div class="right-content">
+      <div class="right-subtitle" id="editingLabel">Editing: Default</div>
+
+      <div class="section hidden" id="defaultExeSection">
+        <label>Default Process</label>
+        <input type="text" id="defaultExeInput" value="explorer.exe"
+          style="width:100%; padding:9px 14px; background:#0f3460; color:#eee; border:1px solid #333; border-radius:8px; font-size:14px; outline:none;"
+          onchange="saveDefaultExe()">
+      </div>
+
+      <div class="section">
+        <label>Effect</label>
+        <select id="effectSelect"></select>
+      </div>
+
+      <div class="section" id="brightnessSection">
+        <label>Brightness</label>
+        <div class="slider-row">
+          <input type="range" id="brightness" min="0" max="4" value="4">
+          <span class="slider-val" id="brightnessVal">4</span>
+        </div>
+      </div>
+
+      <div class="section" id="speedSection">
+        <label>Speed</label>
+        <div class="slider-row">
+          <input type="range" id="speed" min="0" max="4" value="0">
+          <span class="slider-val" id="speedVal">0</span>
+        </div>
+      </div>
+
+      <div class="section" id="colorSection">
+        <label>Color</label>
+        <div class="color-section">
+          <div class="color-mode-toggle">
+            <button id="btnCustomColor" class="active" onclick="setColorMode(false)">Custom RGB</button>
+            <button id="btnDefaultColor" onclick="setColorMode(true)">Default Palette</button>
+          </div>
+          <div id="customColorArea">
+            <div class="color-picker-area" id="svPicker">
+              <div class="color-picker-dot" id="svDot"></div>
+            </div>
+            <div class="hue-bar" id="hueBar">
+              <div class="hue-bar-thumb" id="hueThumb"></div>
+            </div>
+            <div class="color-preview">
+              <div class="color-swatch" id="colorSwatch"></div>
+              <div class="rgb-inputs">
+                <input type="number" id="rInput" min="0" max="255" value="255" placeholder="R">
+                <input type="number" id="gInput" min="0" max="255" value="0" placeholder="G">
+                <input type="number" id="bInput" min="0" max="255" value="0" placeholder="B">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="load-btn" id="loadBtn" onclick="loadEffect()">Load Effect</button>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+const API = "";
+let effects = [];
+let associations = {};
+let selectedItem = "__default__";
+let currentHue = 0, currentSat = 1, currentVal = 1;
+let defaultColor = false;
+let draggingSV = false, draggingHue = false;
+
+// ─── Init ───
+
+async function init() {
+  try {
+    const res = await fetch(API + "/api/effects");
+    effects = await res.json();
+  } catch (e) {
+    document.getElementById("status").textContent = "Cannot connect to server. Open via http://localhost:5123";
+    document.getElementById("status").className = "status error";
+    return;
+  }
+
+  const sel = document.getElementById("effectSelect");
+  effects.forEach(e => sel.appendChild(new Option(e.display, e.id)));
+  sel.addEventListener("change", onEffectChange);
+
+  await refreshAssociations();
+  drawHueBar();
+  selectItem("__default__");
+}
+
+// ─── Associations state ───
+
+async function refreshAssociations() {
+  try {
+    const res = await fetch(API + "/api/associations");
+    associations = await res.json();
+  } catch (e) {}
+  renderProgramList();
+  refreshWatcherStatus();
+}
+
+async function refreshWatcherStatus() {
+  try {
+    const res = await fetch(API + "/api/watcher/status");
+    const st = await res.json();
+    const btn = document.getElementById("watcherToggle");
+    btn.textContent = st.running ? "Disable" : "Enable";
+    btn.classList.toggle("active", st.running);
+    const span = document.getElementById("watcherStatus");
+    if (st.running && st.current_effect) {
+      span.textContent = effects.find(e => e.id === st.current_effect)?.display || st.current_effect;
+    } else {
+      span.textContent = st.running ? "watching..." : "";
+    }
+  } catch (e) {}
+}
+
+// ─── Left panel ───
+
+function renderProgramList() {
+  const list = document.getElementById("programList");
+  list.innerHTML = "";
+
+  // Default item
+  const defEff = associations.default_effect || "colorful_vh";
+  const defExe = associations.default_exe || "explorer.exe";
+  const defDisplay = effects.find(e => e.id === defEff)?.display || defEff;
+  const defItem = document.createElement("div");
+  defItem.className = "prog-item default-item" + (selectedItem === "__default__" ? " selected" : "");
+  defItem.onclick = () => selectItem("__default__");
+  defItem.innerHTML = `<div class="prog-info"><div class="prog-name">\u2328 Default (${defExe})</div><div class="prog-effect">${defDisplay}</div></div>`;
+  list.appendChild(defItem);
+
+  // Program items
+  const programs = associations.programs || {};
+  for (const [exe, eff] of Object.entries(programs)) {
+    const d = effects.find(e => e.id === eff)?.display || eff;
+    const item = document.createElement("div");
+    item.className = "prog-item" + (selectedItem === exe ? " selected" : "");
+    item.onclick = () => selectItem(exe);
+    item.innerHTML = `<div class="prog-info"><div class="prog-name">${exe}</div><div class="prog-effect">${d}</div></div>` +
+      `<button class="prog-remove" onclick="event.stopPropagation(); removeProgram('${exe}')">\u2715</button>`;
+    list.appendChild(item);
+  }
+}
+
+// ─── Item selection ───
+
+function selectItem(itemId) {
+  selectedItem = itemId;
+
+  let effectId;
+  if (itemId === "__default__") {
+    effectId = associations.default_effect || "colorful_vh";
+    const defExe = associations.default_exe || "explorer.exe";
+    document.getElementById("editingLabel").textContent = "Editing: Default (" + defExe + ")";
+    document.getElementById("defaultExeSection").classList.remove("hidden");
+    document.getElementById("defaultExeInput").value = defExe;
+  } else {
+    effectId = (associations.programs || {})[itemId] || "colorful_vh";
+    document.getElementById("editingLabel").textContent = "Editing: " + itemId;
+    document.getElementById("defaultExeSection").classList.add("hidden");
+  }
+
+  document.getElementById("effectSelect").value = effectId;
+  loadEffectConfig(effectId);
+
+  // Load button only for default
+  document.getElementById("loadBtn").classList.toggle("hidden", itemId !== "__default__");
+
+  renderProgramList();
+  document.getElementById("status").textContent = "";
+}
+
+function loadEffectConfig(effectId) {
+  const effect = effects.find(e => e.id === effectId);
+  if (!effect) return;
+
+  const isPicture = effect.type === "picture";
+  document.getElementById("speedSection").classList.toggle("hidden", isPicture);
+  document.getElementById("colorSection").classList.toggle("hidden", isPicture);
+
+  const cfg = effect.config;
+  document.getElementById("brightness").value = cfg.brightness ?? 4;
+  document.getElementById("brightnessVal").textContent = cfg.brightness ?? 4;
+
+  if (!isPicture) {
+    document.getElementById("speed").value = cfg.speed ?? 0;
+    document.getElementById("speedVal").textContent = cfg.speed ?? 0;
+    defaultColor = cfg.default_color ?? false;
+    setColorMode(defaultColor);
+    if (cfg.rgb) {
+      setRGBInputs(cfg.rgb[0], cfg.rgb[1], cfg.rgb[2]);
+      rgbToHSV(cfg.rgb[0], cfg.rgb[1], cfg.rgb[2]);
+      drawSVPicker();
+      updateSVDot();
+      updateHueThumb();
+    }
+  }
+}
+
+// ─── Effect dropdown change ───
+
+async function onEffectChange() {
+  const effectId = document.getElementById("effectSelect").value;
+
+  // Save mapping
+  if (selectedItem === "__default__") {
+    associations.default_effect = effectId;
+    await fetch(API + "/api/associations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ default_effect: effectId }),
+    });
+  } else {
+    associations.programs = associations.programs || {};
+    associations.programs[selectedItem] = effectId;
+    await fetch(API + "/api/associations/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exe: selectedItem, effect: effectId }),
+    });
+  }
+
+  loadEffectConfig(effectId);
+  renderProgramList();
+}
+
+// ─── Auto-save settings ───
+
+function getCurrentSettings() {
+  const effectId = document.getElementById("effectSelect").value;
+  const effect = effects.find(e => e.id === effectId);
+  if (!effect) return null;
+  const settings = { brightness: parseInt(document.getElementById("brightness").value) };
+  if (effect.type === "rgb") {
+    settings.speed = parseInt(document.getElementById("speed").value);
+    settings.default_color = defaultColor;
+    settings.rgb = [
+      parseInt(document.getElementById("rInput").value) || 0,
+      parseInt(document.getElementById("gInput").value) || 0,
+      parseInt(document.getElementById("bInput").value) || 0,
+    ];
+  }
+  return settings;
+}
+
+async function autoSave() {
+  const effectId = document.getElementById("effectSelect").value;
+  const settings = getCurrentSettings();
+  if (!settings) return;
+  const effect = effects.find(e => e.id === effectId);
+  if (effect) effect.config = settings;
+  try {
+    await fetch(API + "/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ effect: effectId, settings }),
+    });
+  } catch (e) {}
+}
+
+// ─── Sliders ───
+
+document.getElementById("brightness").addEventListener("input", e => {
+  document.getElementById("brightnessVal").textContent = e.target.value;
+});
+document.getElementById("brightness").addEventListener("change", autoSave);
+
+document.getElementById("speed").addEventListener("input", e => {
+  document.getElementById("speedVal").textContent = e.target.value;
+});
+document.getElementById("speed").addEventListener("change", autoSave);
+
+// ─── Color mode ───
+
+function setColorMode(isDefault) {
+  defaultColor = isDefault;
+  document.getElementById("btnCustomColor").classList.toggle("active", !isDefault);
+  document.getElementById("btnDefaultColor").classList.toggle("active", isDefault);
+  document.getElementById("customColorArea").classList.toggle("hidden", isDefault);
+  autoSave();
+}
+
+// ─── Color picker ───
+
+function hsvToRgb(h, s, v) {
+  let r, g, b;
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function rgbToHSV(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const d = max - min;
+  currentVal = max;
+  currentSat = max === 0 ? 0 : d / max;
+  if (d === 0) currentHue = 0;
+  else if (max === r) currentHue = ((g - b) / d + 6) % 6 / 6;
+  else if (max === g) currentHue = ((b - r) / d + 2) / 6;
+  else currentHue = ((r - g) / d + 4) / 6;
+}
+
+function drawHueBar() {
+  const bar = document.getElementById("hueBar");
+  let grad = "linear-gradient(to right";
+  for (let i = 0; i <= 360; i += 30) {
+    const [r, g, b] = hsvToRgb(i / 360, 1, 1);
+    grad += `, rgb(${r},${g},${b})`;
+  }
+  bar.style.background = grad + ")";
+}
+
+function drawSVPicker() {
+  const picker = document.getElementById("svPicker");
+  const [hr, hg, hb] = hsvToRgb(currentHue, 1, 1);
+  picker.style.background =
+    `linear-gradient(to top, #000, transparent), ` +
+    `linear-gradient(to right, #fff, rgb(${hr},${hg},${hb}))`;
+}
+
+function updateSVDot() {
+  const dot = document.getElementById("svDot");
+  const picker = document.getElementById("svPicker");
+  dot.style.left = (currentSat * picker.offsetWidth) + "px";
+  dot.style.top = ((1 - currentVal) * picker.offsetHeight) + "px";
+}
+
+function updateHueThumb() {
+  const thumb = document.getElementById("hueThumb");
+  const bar = document.getElementById("hueBar");
+  thumb.style.left = (currentHue * bar.offsetWidth) + "px";
+}
+
+function updateFromHSV() {
+  const [r, g, b] = hsvToRgb(currentHue, currentSat, currentVal);
+  setRGBInputs(r, g, b);
+  drawSVPicker();
+  updateSVDot();
+  updateHueThumb();
+}
+
+function setRGBInputs(r, g, b) {
+  document.getElementById("rInput").value = r;
+  document.getElementById("gInput").value = g;
+  document.getElementById("bInput").value = b;
+  document.getElementById("colorSwatch").style.background = `rgb(${r},${g},${b})`;
+}
+
+// SV picker mouse
+const svPicker = document.getElementById("svPicker");
+svPicker.addEventListener("mousedown", e => { draggingSV = true; pickSV(e); });
+document.addEventListener("mousemove", e => { if (draggingSV) pickSV(e); });
+document.addEventListener("mouseup", () => { if (draggingSV) { draggingSV = false; autoSave(); } });
+
+function pickSV(e) {
+  const rect = svPicker.getBoundingClientRect();
+  currentSat = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  currentVal = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+  updateFromHSV();
+}
+
+// Hue bar mouse
+const hueBar = document.getElementById("hueBar");
+hueBar.addEventListener("mousedown", e => { draggingHue = true; pickHue(e); });
+document.addEventListener("mousemove", e => { if (draggingHue) pickHue(e); });
+document.addEventListener("mouseup", () => { if (draggingHue) { draggingHue = false; autoSave(); } });
+
+function pickHue(e) {
+  const rect = hueBar.getBoundingClientRect();
+  currentHue = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  updateFromHSV();
+}
+
+// RGB manual input
+["rInput", "gInput", "bInput"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => {
+    const r = parseInt(document.getElementById("rInput").value) || 0;
+    const g = parseInt(document.getElementById("gInput").value) || 0;
+    const b = parseInt(document.getElementById("bInput").value) || 0;
+    rgbToHSV(Math.max(0, Math.min(255, r)), Math.max(0, Math.min(255, g)), Math.max(0, Math.min(255, b)));
+    drawSVPicker();
+    updateSVDot();
+    updateHueThumb();
+    document.getElementById("colorSwatch").style.background = `rgb(${r},${g},${b})`;
+  });
+  document.getElementById(id).addEventListener("change", autoSave);
+});
+
+// ─── Load Effect (default only) ───
+
+async function loadEffect() {
+  const effectId = document.getElementById("effectSelect").value;
+  const effect = effects.find(e => e.id === effectId);
+  if (!effect) return;
+
+  const settings = getCurrentSettings();
+  const statusEl = document.getElementById("status");
+
+  try {
+    const res = await fetch(API + "/api/load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ effect: effectId, settings }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      statusEl.textContent = "Error: " + data.error;
+      statusEl.className = "status error";
+    } else {
+      statusEl.textContent = "Loaded: " + effect.display;
+      statusEl.className = "status";
+      effect.config = settings;
+    }
+  } catch (e) {
+    statusEl.textContent = "Connection error \u2014 is the server running?";
+    statusEl.className = "status error";
+  }
+}
+
+// ─── Program management ───
+
+async function addProgram() {
+  const exe = document.getElementById("exeInput").value.trim();
+  if (!exe) return;
+  const defEff = associations.default_effect || "colorful_vh";
+  await fetch(API + "/api/associations/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ exe, effect: defEff }),
+  });
+  document.getElementById("exeInput").value = "";
+  await refreshAssociations();
+  // Select the newly added program
+  const exeLower = exe.toLowerCase().split(/[/\\]/).pop();
+  selectItem(exeLower);
+}
+
+async function removeProgram(exe) {
+  await fetch(API + "/api/associations/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ exe }),
+  });
+  if (selectedItem === exe) selectedItem = "__default__";
+  await refreshAssociations();
+  selectItem(selectedItem);
+}
+
+async function toggleWatcher() {
+  const enabling = document.getElementById("watcherToggle").textContent === "Enable";
+  await fetch(API + "/api/associations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: enabling }),
+  });
+  refreshWatcherStatus();
+}
+
+async function saveDefaultExe() {
+  const exe = document.getElementById("defaultExeInput").value.trim();
+  if (!exe) return;
+  associations.default_exe = exe;
+  await fetch(API + "/api/associations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ default_exe: exe }),
+  });
+  renderProgramList();
+}
+
+// ─── Boot ───
+drawSVPicker();
+updateSVDot();
+updateHueThumb();
+setRGBInputs(255, 0, 0);
+init();
+</script>
+</body>
+</html>
