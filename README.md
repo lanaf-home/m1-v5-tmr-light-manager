@@ -23,7 +23,7 @@ A lightweight utility designed to automate RGB lighting profiles for your keyboa
 This tool uses reverse-engineered USB commands to interface directly with the keyboard firmware. It monitors active processes and updates the `keyboard_config.json` file to trigger the desired lighting effect.
 
 ## Usage
-1. Run `m1v5trm_light_manager.exe`.
+1. Run `m1v5tmr_light_manager.exe`.
 2. The program will minimize to your system tray.
 3. Click the tray icon to launch the Web-based GUI.
 4. Associate your preferred apps with specific lighting profiles if you want.
@@ -34,7 +34,7 @@ This tool uses reverse-engineered USB commands to interface directly with the ke
 * **Stability:** This utility interacts directly with hardware protocols. While I have used this personally without issue, **use this tool at your own risk.** If MonsGeek updates their drivers, functionality may be affected.
 
 ## Installation & Development
-* The `m1v5trm_light_manager.exe` is automatically compiled from the `server.py` script located in this repository.
+* The `m1v5tmr_light_manager.exe` is automatically compiled from the `server.py` script located in this repository.
 * For the latest updates, source code, and release builds, visit the GitHub repository: 
   [Link to lanaf-home/m1-v5-tmr-light-manager](https://github.com/lanaf-home/m1-v5-tmr-light-manager)
 
