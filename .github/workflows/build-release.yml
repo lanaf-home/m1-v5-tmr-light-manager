@@ -38,7 +38,7 @@ jobs:
       
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile `
+          pyinstaller --onefile --noconsole `
             --name m1v5trm_light_manager `
             --icon=NONE `
             --hidden-import=flask `
