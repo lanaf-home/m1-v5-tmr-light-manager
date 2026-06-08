@@ -45,8 +45,12 @@ jobs:
             --hidden-import=hid `
             --hidden-import=psutil `
             --hidden-import=pystray `
+            --hidden-import=pystray._win32 `
             --hidden-import=PIL `
-            --add-data "gui.html:." `
+            --hidden-import=PIL.Image `
+            --hidden-import=PIL.ImageDraw `
+            --collect-all hid `
+            --add-data "gui.html;." `
             server.py
       
       - name: Create release package
