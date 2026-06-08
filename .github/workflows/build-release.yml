@@ -39,7 +39,7 @@ jobs:
       - name: Build executable with PyInstaller
         run: |
           pyinstaller --onefile --noconsole `
-            --name m1v5trm_light_manager `
+            --name m1v5tmr_light_manager `
             --icon=NONE `
             --hidden-import=flask `
             --hidden-import=hid `
@@ -56,8 +56,8 @@ jobs:
         shell: powershell
         run: |
           $arch = "${{ matrix.arch }}"
-          $zipName = "m1v5trm_light_manager_${arch}.zip"
-          $exePath = "dist\m1v5trm_light_manager.exe"
+          $zipName = "m1v5tmr_light_manager_${arch}.zip"
+          $exePath = "dist\m1v5tmr_light_manager.exe"
           $guiPath = "gui.html"
           
           # Create temp directory for packaging
@@ -75,6 +75,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            m1v5trm_light_manager_${{ matrix.arch }}.zip
+            m1v5tmr_light_manager_${{ matrix.arch }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
