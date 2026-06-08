@@ -4,16 +4,20 @@ A lightweight utility designed to automate RGB lighting profiles for your keyboa
 
 ## Screenshots
 
-<img src="images/screenshot1.png" width="600" alt="Main GUI">
+<img src="images/screenshot1.png" width="600" alt="Main GUI Default">
 *Figure 1: Main GUI showing different light effects you can choose from in the default state.*
 
-<img src="images/screenshot2.png" width="600" alt="Configuration File">
+
+<img src="images/screenshot2.png" width="600" alt="Custom Picture Option">
 *Figure 2: The Picture 1,2,3,4,5 corresponds to this part in the MonsGeek APP.*
 
-<img src="images/screenshot3.png" width="600" alt="System Tray">
+
+<img src="images/screenshot3.png" width="600" alt="Main GUI Custom app">
 *Figure 3: Main GUI showing different light effects you can choose from + their settings for a specific app.*
 
 
+<img src="images/screenshot4.png" width="600" alt="System Tray">
+*Figure 4: Tray icon menu for accessing the web GUI.*
 
 ---
 
