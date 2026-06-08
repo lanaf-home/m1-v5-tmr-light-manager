@@ -29,7 +29,7 @@ This tool uses reverse-engineered USB commands to interface directly with the ke
 4. Associate your preferred apps with specific lighting profiles if you want.
 
 **Technical Notes:**
-* **you might need to run as admin.
+* **you might need to run as admin**.
 * **Debug Mode:** Run the executable with the `--debug` flag if you need to generate logs.
 * **Compatibility:** This tool supports both wired and wireless modes with automatic detection.
 * **Stability:** This utility interacts directly with hardware protocols. While I have used this personally without issue, **use this tool at your own risk.** If MonsGeek updates their drivers, functionality may be affected.
