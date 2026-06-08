@@ -1,4 +1,4 @@
-# MonsGeek M1 V5 RGB Manager
+# MonsGeek M1 V5 TMR Light Manager
 
 A lightweight utility designed to automate RGB lighting profiles for your keyboard based on active applications. 
 
