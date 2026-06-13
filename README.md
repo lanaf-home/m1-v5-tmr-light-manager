@@ -1,6 +1,6 @@
 # MonsGeek M1 V5 TMR Light Manager
 
-A lightweight utility designed to automate RGB lighting profiles for your keyboard based on active applications. 
+A lightweight utility designed to automate RGB lighting profiles and USB polling rate for your keyboard based on active applications. 
 
 ## Screenshots
 
@@ -20,13 +20,20 @@ A lightweight utility designed to automate RGB lighting profiles for your keyboa
 ---
 
 ## How it Works
-This tool uses reverse-engineered USB commands to interface directly with the keyboard firmware. It monitors active processes and updates the `keyboard_config.json` file to trigger the desired lighting effect.
+This tool uses reverse-engineered USB commands to interface directly with the keyboard firmware. It monitors active processes and updates the `keyboard_config.json` file to trigger the desired lighting effect and polling rate.
+
+## Features
+* **RGB Lighting Profiles** — Choose from 23 lighting effects with customizable brightness, speed, and color.
+* **USB Polling Rate Control** — Set the keyboard polling rate per profile: 125, 250, 500, 1000, 2000, 4000, or 8000 Hz.
+* **Per-Application Profiles** — Automatically switch both lighting and polling rate when specific apps are in focus.
+* **System Tray** — Quick access to effects and polling rate from the tray icon right-click menu.
 
 ## Usage
 1. Run `m1v5tmr_light_manager.exe`.
 2. The program will minimize to your system tray.
 3. Click the tray icon to launch the Web-based GUI.
-4. Associate your preferred apps with specific lighting profiles if you want.
+4. Associate your preferred apps with specific lighting profiles and polling rates.
+5. Change polling rate on the fly from the GUI dropdown or the tray icon's **Polling Rate** submenu.
 
 **Technical Notes:**
 * **you might need to run as admin**.
