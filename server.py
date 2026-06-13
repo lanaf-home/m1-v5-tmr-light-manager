@@ -78,6 +78,25 @@ def build_rgb_effect(effect_id, default_mode=0x07, brightness=4, speed=0,
     return build_packet(header)
 
 
+# Polling-rate byte values  (byte[2] in a 0x03 SET_REPORT)
+POLLING_RATE_MAP = {
+    125:  6,
+    250:  5,
+    500:  4,
+    1000: 3,
+    2000: 2,
+    4000: 1,
+    8000: 0,
+}
+POLLING_RATE_OPTIONS = [125, 250, 500, 1000, 2000, 4000, 8000]
+
+
+def build_polling_rate_packet(hz):
+    rate_val = POLLING_RATE_MAP[hz]
+    header = [0x03, 0x00, rate_val, 0x00, 0x00, 0x00, 0x00]
+    return build_packet(header)
+
+
 EFFECTS = {
     "user_picture_1": {"builder": lambda **kw: build_user_picture(pattern=1, **kw), "type": "picture"},
     "user_picture_2": {"builder": lambda **kw: build_user_picture(pattern=2, **kw), "type": "picture"},
@@ -204,18 +223,35 @@ def send_to_keyboard(effect_name, settings):
     return False
 
 
+def send_polling_rate(hz):
+    """Send a polling-rate change to the keyboard."""
+    if hz not in POLLING_RATE_MAP:
+        return False
+    payload = build_polling_rate_packet(hz)
+    label = f"polling_rate_{hz}Hz"
+    if _try_send_hid(payload, VENDOR_ID, WIRED_PID, label, "wired"):
+        return True
+    if _try_send_hid(payload, VENDOR_ID, WIRELESS_PID, label, "wireless"):
+        return True
+    if DEBUG_MODE:
+        logger.warning(f"Keyboard not found for {label} (tried wired & wireless)")
+    return False
+
+
 # ─── Program associations ─────────────────────
 
 def load_associations():
     """Load program-to-effect mappings. Returns dict like:
     { "default_effect": "lasers", "default_exe": "explorer.exe",
-      "programs": { "doom.exe": "meteor", "spotify.exe": "sine_wave", ... } }
+      "programs": { "doom.exe": "meteor", "spotify.exe": "sine_wave", ... },
+      "polling_rates": { "__default__": 1000, "doom.exe": 8000, ... } }
     """
     cfg = load_config()
     return cfg.get("_associations", {
         "default_effect": "colorful_vh",
         "default_exe": "explorer.exe",
         "programs": {},
+        "polling_rates": {},
         "enabled": True,
     })
 
@@ -234,8 +270,10 @@ class ProcessWatcher:
         self._running = False
         self._thread = None
         self._current_effect = None      # effect currently active
+        self._current_rate = None        # polling rate currently active
         self._last_send_time = 0         # rate limit
         self._pending_effect = None      # debounce: what we want to switch to
+        self._pending_rate = None        # debounce: polling rate to switch to
         self._pending_since = 0          # debounce: when we first saw it
         self.POLL_INTERVAL = 2.0         # how often to scan processes (seconds)
         self.DEBOUNCE_TIME = 1.0         # seconds before committing a switch
@@ -273,28 +311,32 @@ class ProcessWatcher:
         return exes
 
     def _resolve_effect(self):
-        """Determine which effect should be active based on running processes."""
+        """Determine which effect and polling rate should be active based on running processes.
+        Returns (effect_name, polling_rate_hz) or (None, None)."""
         assoc = load_associations()
         if not assoc.get("enabled", True):
-            return None
+            return None, None
 
         programs = assoc.get("programs", {})
+        polling_rates = assoc.get("polling_rates", {})
         default_effect = assoc.get("default_effect", "colorful_vh")
+        default_rate = polling_rates.get("__default__", 1000)
 
         if not programs:
-            return default_effect
+            return default_effect, default_rate
 
         running = self._get_running_exes()
 
         # Check if any associated program is running
         for exe_name, effect_name in programs.items():
             if exe_name.lower() in running:
-                return effect_name
+                rate = polling_rates.get(exe_name.lower(), default_rate)
+                return effect_name, rate
 
-        return default_effect
+        return default_effect, default_rate
 
-    def _send_effect(self, effect_name):
-        """Send effect to keyboard with rate limiting."""
+    def _send_effect(self, effect_name, polling_rate_hz=None):
+        """Send effect (and optionally polling rate) to keyboard with rate limiting."""
         now = time.time()
         if now - self._last_send_time < self.MIN_SEND_GAP:
             return
@@ -307,6 +349,12 @@ class ProcessWatcher:
             self._last_send_time = now
             display = EFFECT_DISPLAY_NAMES.get(effect_name, effect_name)
             msg = f"Watcher switched to: {display}"
+            # Send polling rate if changed
+            if polling_rate_hz and polling_rate_hz != self._current_rate:
+                rate_ok = send_polling_rate(polling_rate_hz)
+                if rate_ok:
+                    self._current_rate = polling_rate_hz
+                    msg += f" @ {polling_rate_hz}Hz"
             print(msg)
             if DEBUG_MODE:
                 logger.info(msg)
@@ -318,25 +366,28 @@ class ProcessWatcher:
                     break
 
             try:
-                target = self._resolve_effect()
+                target, target_rate = self._resolve_effect()
                 if target is None:
                     time.sleep(self.POLL_INTERVAL)
                     continue
 
                 now = time.time()
 
-                if target != self._current_effect:
+                if target != self._current_effect or target_rate != self._current_rate:
                     # New target detected — start debounce
-                    if target != self._pending_effect:
+                    if target != self._pending_effect or target_rate != self._pending_rate:
                         self._pending_effect = target
+                        self._pending_rate = target_rate
                         self._pending_since = now
                     elif now - self._pending_since >= self.DEBOUNCE_TIME:
                         # Debounce passed — commit the switch
-                        self._send_effect(target)
+                        self._send_effect(target, target_rate)
                         self._pending_effect = None
+                        self._pending_rate = None
                 else:
-                    # Already on the right effect
+                    # Already on the right effect + rate
                     self._pending_effect = None
+                    self._pending_rate = None
 
             except Exception as e:
                 print(f"Watcher error: {e}")
@@ -430,6 +481,8 @@ def api_set_associations():
         assoc["default_exe"] = data["default_exe"]
     if "programs" in data:
         assoc["programs"] = data["programs"]
+    if "polling_rates" in data:
+        assoc["polling_rates"] = data["polling_rates"]
     if "enabled" in data:
         assoc["enabled"] = data["enabled"]
     save_associations(assoc)
@@ -462,8 +515,33 @@ def api_remove_program():
     exe = data.get("exe", "").strip().lower()
     assoc = load_associations()
     assoc.get("programs", {}).pop(exe, None)
+    assoc.get("polling_rates", {}).pop(exe, None)
     save_associations(assoc)
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/polling-rates")
+def api_polling_rates():
+    return jsonify(POLLING_RATE_OPTIONS)
+
+
+@app.route("/api/polling-rate", methods=["POST"])
+def api_set_polling_rate():
+    data = request.get_json()
+    hz = data.get("hz")
+    profile = data.get("profile", "__default__")  # "__default__" or exe name
+    if hz not in POLLING_RATE_MAP:
+        return jsonify({"error": f"Invalid polling rate: {hz}"}), 400
+    # Save to associations
+    assoc = load_associations()
+    assoc.setdefault("polling_rates", {})[profile] = hz
+    save_associations(assoc)
+    # Send to keyboard immediately
+    ok = send_polling_rate(hz)
+    if ok:
+        return jsonify({"status": "ok", "hz": hz})
+    else:
+        return jsonify({"error": "Could not find keyboard"}), 500
 
 
 @app.route("/api/watcher/status")
@@ -538,9 +616,18 @@ def build_tray_menu():
             return cb
         effect_items.append(pystray.MenuItem(display, make_callback(name)))
 
+    polling_items = []
+    for hz in POLLING_RATE_OPTIONS:
+        def make_rate_callback(rate):
+            def cb(icon, item):
+                send_polling_rate(rate)
+            return cb
+        polling_items.append(pystray.MenuItem(f"{hz} Hz", make_rate_callback(hz)))
+
     return pystray.Menu(
         pystray.MenuItem("Open GUI", on_open_gui, default=True),
         pystray.MenuItem("Effects", pystray.Menu(*effect_items)),
+        pystray.MenuItem("Polling Rate", pystray.Menu(*polling_items)),
         pystray.MenuItem(
             lambda item: "Disable Watcher" if watcher.is_running else "Enable Watcher",
             on_toggle_watcher,
