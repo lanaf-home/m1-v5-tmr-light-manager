@@ -11,7 +11,7 @@ A lightweight utility designed to automate RGB lighting profiles and USB polling
 *Figure 2: The Picture 1,2,3,4,5 corresponds to this part in the MonsGeek APP.*
 <br><br><br>
 <img src="images/screenshot3.png" width="600" alt="Main GUI Custom app">
-*Figure 3: Main GUI showing different light effects you can choose from + their settings for a specific app.*
+*Figure 3: Main GUI showing app specific settings (for example doom.exe).*
 <br><br><br>
 <img src="images/screenshot4.png" width="600" alt="System Tray">
 *Figure 4: Tray icon menu for accessing the web GUI.*
