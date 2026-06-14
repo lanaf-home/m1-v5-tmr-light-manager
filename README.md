@@ -14,7 +14,7 @@ A lightweight utility designed to automate RGB lighting profiles and USB polling
 *Figure 3: Main GUI showing app specific settings (for example doom.exe).*
 <br><br><br>
 <img src="images/screenshot4.png" width="600" alt="System Tray">
-*Figure 4: Tray icon menu for accessing the web GUI.*
+*Figure 4: Tray icon menu for accessing the web GUI. Left click to open GUI, right click to open quick settings.*
 <br><br><br>
 
 ---
