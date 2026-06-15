@@ -142,6 +142,7 @@
     padding: 10px 12px;
     border-top: 1px solid #333;
     display: flex;
+    flex-direction: column;
     gap: 6px;
   }
   .add-form input {
@@ -362,8 +363,11 @@
     </div>
     <div class="program-list" id="programList"></div>
     <div class="add-form">
-      <input type="text" id="exeInput" placeholder="program.exe" onkeydown="if(event.key==='Enter')addProgram()">
-      <button onclick="addProgram()">Add</button>
+      <input type="text" id="nameInput" placeholder="Name (optional)" onkeydown="if(event.key==='Enter')document.getElementById('exeInput').focus()">
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="exeInput" placeholder="program.exe" style="flex:1" onkeydown="if(event.key==='Enter')addProgram()">
+        <button onclick="addProgram()">Add</button>
+      </div>
     </div>
   </div>
 
@@ -522,13 +526,15 @@ function renderProgramList() {
 
   // Program items
   const programs = associations.programs || {};
+  const programNames = associations.program_names || {};
   for (const [exe, eff] of Object.entries(programs)) {
     const d = effects.find(e => e.id === eff)?.display || eff;
     const rate = pollingRates[exe] || defRate;
+    const displayName = programNames[exe] || exe;
     const item = document.createElement("div");
     item.className = "prog-item" + (selectedItem === exe ? " selected" : "");
     item.onclick = () => selectItem(exe);
-    item.innerHTML = `<div class="prog-info"><div class="prog-name">${exe}</div><div class="prog-effect">${d} · ${rate}Hz</div></div>` +
+    item.innerHTML = `<div class="prog-info"><div class="prog-name">${displayName}</div><div class="prog-effect">${exe} \u00B7 ${d} \u00B7 ${rate}Hz</div></div>` +
       `<button class="prog-remove" onclick="event.stopPropagation(); removeProgram('${exe}')">\u2715</button>`;
     list.appendChild(item);
   }
@@ -548,7 +554,9 @@ function selectItem(itemId) {
     document.getElementById("defaultExeInput").value = defExe;
   } else {
     effectId = (associations.programs || {})[itemId] || "colorful_vh";
-    document.getElementById("editingLabel").textContent = "Editing: " + itemId;
+    const programNames = associations.program_names || {};
+    const displayName = programNames[itemId] || itemId;
+    document.getElementById("editingLabel").textContent = "Editing: " + displayName;
     document.getElementById("defaultExeSection").classList.add("hidden");
   }
 
@@ -871,13 +879,15 @@ async function loadEffect() {
 async function addProgram() {
   const exe = document.getElementById("exeInput").value.trim();
   if (!exe) return;
+  const name = document.getElementById("nameInput").value.trim();
   const defEff = associations.default_effect || "colorful_vh";
   await fetch(API + "/api/associations/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ exe, effect: defEff }),
+    body: JSON.stringify({ exe, effect: defEff, name }),
   });
   document.getElementById("exeInput").value = "";
+  document.getElementById("nameInput").value = "";
   await refreshAssociations();
   // Select the newly added program
   const exeLower = exe.toLowerCase().split(/[/\\]/).pop();

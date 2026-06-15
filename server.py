@@ -244,16 +244,20 @@ def load_associations():
     """Load program-to-effect mappings. Returns dict like:
     { "default_effect": "lasers", "default_exe": "explorer.exe",
       "programs": { "doom.exe": "meteor", "spotify.exe": "sine_wave", ... },
+      "program_names": { "doom.exe": "DOOM", ... },
       "polling_rates": { "__default__": 1000, "doom.exe": 8000, ... } }
     """
     cfg = load_config()
-    return cfg.get("_associations", {
+    assoc = cfg.get("_associations", {
         "default_effect": "colorful_vh",
         "default_exe": "explorer.exe",
         "programs": {},
+        "program_names": {},
         "polling_rates": {},
         "enabled": True,
     })
+    assoc.setdefault("program_names", {})
+    return assoc
 
 
 def save_associations(assoc):
@@ -271,6 +275,7 @@ class ProcessWatcher:
         self._thread = None
         self._current_effect = None      # effect currently active
         self._current_rate = None        # polling rate currently active
+        self._current_profile = None     # exe name or "Default" for active profile
         self._last_send_time = 0         # rate limit
         self._pending_effect = None      # debounce: what we want to switch to
         self._pending_rate = None        # debounce: polling rate to switch to
@@ -312,10 +317,10 @@ class ProcessWatcher:
 
     def _resolve_effect(self):
         """Determine which effect and polling rate should be active based on running processes.
-        Returns (effect_name, polling_rate_hz) or (None, None)."""
+        Returns (effect_name, polling_rate_hz, matched_exe) or (None, None, None)."""
         assoc = load_associations()
         if not assoc.get("enabled", True):
-            return None, None
+            return None, None, None
 
         programs = assoc.get("programs", {})
         polling_rates = assoc.get("polling_rates", {})
@@ -323,7 +328,7 @@ class ProcessWatcher:
         default_rate = polling_rates.get("__default__", 1000)
 
         if not programs:
-            return default_effect, default_rate
+            return default_effect, default_rate, None
 
         running = self._get_running_exes()
 
@@ -331,9 +336,9 @@ class ProcessWatcher:
         for exe_name, effect_name in programs.items():
             if exe_name.lower() in running:
                 rate = polling_rates.get(exe_name.lower(), default_rate)
-                return effect_name, rate
+                return effect_name, rate, exe_name.lower()
 
-        return default_effect, default_rate
+        return default_effect, default_rate, None
 
     def _send_effect(self, effect_name, polling_rate_hz=None):
         """Send effect (and optionally polling rate) to keyboard with rate limiting."""
@@ -366,7 +371,7 @@ class ProcessWatcher:
                     break
 
             try:
-                target, target_rate = self._resolve_effect()
+                target, target_rate, target_exe = self._resolve_effect()
                 if target is None:
                     time.sleep(self.POLL_INTERVAL)
                     continue
@@ -382,10 +387,12 @@ class ProcessWatcher:
                     elif now - self._pending_since >= self.DEBOUNCE_TIME:
                         # Debounce passed — commit the switch
                         self._send_effect(target, target_rate)
+                        self._current_profile = target_exe  # None = Default
                         self._pending_effect = None
                         self._pending_rate = None
                 else:
                     # Already on the right effect + rate
+                    self._current_profile = target_exe
                     self._pending_effect = None
                     self._pending_rate = None
 
@@ -485,6 +492,8 @@ def api_set_associations():
         assoc["polling_rates"] = data["polling_rates"]
     if "enabled" in data:
         assoc["enabled"] = data["enabled"]
+    if "program_names" in data:
+        assoc["program_names"] = data["program_names"]
     save_associations(assoc)
     # Restart watcher if enabled changed
     if assoc.get("enabled", True) and not watcher.is_running:
@@ -499,14 +508,18 @@ def api_add_program():
     data = request.get_json()
     exe = data.get("exe", "").strip()
     effect = data.get("effect", "")
+    name = data.get("name", "").strip()
     if not exe or effect not in EFFECTS:
         return jsonify({"error": "Invalid exe or effect"}), 400
     # Store just the exe filename (lowercase)
     exe_name = os.path.basename(exe).lower()
     assoc = load_associations()
     assoc.setdefault("programs", {})[exe_name] = effect
+    # Store display name (default to exe filename without extension)
+    display_name = name if name else os.path.splitext(exe_name)[0]
+    assoc.setdefault("program_names", {})[exe_name] = display_name
     save_associations(assoc)
-    return jsonify({"status": "ok", "exe": exe_name, "effect": effect})
+    return jsonify({"status": "ok", "exe": exe_name, "effect": effect, "name": display_name})
 
 
 @app.route("/api/associations/remove", methods=["POST"])
@@ -516,6 +529,7 @@ def api_remove_program():
     assoc = load_associations()
     assoc.get("programs", {}).pop(exe, None)
     assoc.get("polling_rates", {}).pop(exe, None)
+    assoc.get("program_names", {}).pop(exe, None)
     save_associations(assoc)
     return jsonify({"status": "ok"})
 
@@ -549,6 +563,7 @@ def api_watcher_status():
     return jsonify({
         "running": watcher.is_running,
         "current_effect": watcher._current_effect,
+        "current_profile": watcher._current_profile,
     })
 
 
@@ -605,6 +620,18 @@ def on_toggle_watcher(icon, item):
         save_associations(assoc)
 
 
+def _get_active_profile_label():
+    """Return a label like 'Active: DOOM' or 'Active: Default' for the tray menu."""
+    if not watcher.is_running:
+        return "Watcher disabled"
+    exe = watcher._current_profile
+    if exe is None:
+        return "Active: Default"
+    assoc = load_associations()
+    name = assoc.get("program_names", {}).get(exe, exe)
+    return f"Active: {name}"
+
+
 def build_tray_menu():
     effect_items = []
     for name in EFFECTS:
@@ -626,6 +653,11 @@ def build_tray_menu():
 
     return pystray.Menu(
         pystray.MenuItem("Open GUI", on_open_gui, default=True),
+        pystray.MenuItem(
+            lambda item: _get_active_profile_label(),
+            None,
+            enabled=False,
+        ),
         pystray.MenuItem("Effects", pystray.Menu(*effect_items)),
         pystray.MenuItem("Polling Rate", pystray.Menu(*polling_items)),
         pystray.MenuItem(
