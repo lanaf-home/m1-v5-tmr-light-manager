@@ -481,8 +481,10 @@ class ProcessWatcher:
             self._last_send_time = now
             display = EFFECT_DISPLAY_NAMES.get(effect_name, effect_name)
             msg = f"Watcher switched to: {display}"
-            # Send polling rate if changed (or if forced)
+            # Send polling rate if changed (or if forced), with a gap so
+            # the keyboard firmware has time to process the effect packet.
             if polling_rate_hz and (force or polling_rate_hz != self._current_rate):
+                time.sleep(0.5)
                 rate_ok = send_polling_rate(polling_rate_hz)
                 if rate_ok:
                     self._current_rate = polling_rate_hz
@@ -533,11 +535,11 @@ class ProcessWatcher:
                     continue
 
                 now = time.time()
+                profile_changed = target_exe != self._current_profile
 
                 if force:
                     # Settings or mapping changed externally — re-apply now,
                     # bypassing debounce and rate limit.
-                    profile_changed = target_exe != self._current_profile
                     effect_changed = target != self._current_effect
                     print(f"[watcher] force-resend target={target} exe={target_exe} rate={target_rate}")
                     if self._send_effect(target, target_rate, force=True):
@@ -549,7 +551,7 @@ class ProcessWatcher:
                         # same profile (e.g. brightness tweak) shouldn't spam.
                         if profile_changed or effect_changed:
                             self._record_switch(target, target_exe, target_rate)
-                elif target != self._current_effect or target_rate != self._current_rate:
+                elif profile_changed or target != self._current_effect or target_rate != self._current_rate:
                     # New target detected — start debounce
                     if target != self._pending_effect or target_rate != self._pending_rate:
                         self._pending_effect = target
@@ -841,6 +843,15 @@ def on_toggle_watcher(icon, item):
         save_associations(assoc)
 
 
+def on_force_refresh(icon, item):
+    """Tray action: re-scan processes and re-apply the active profile now."""
+    if watcher.is_running:
+        watcher.request_resend()
+        print("[tray] Force refresh requested")
+    else:
+        print("[tray] Force refresh ignored — watcher is disabled")
+
+
 def on_toggle_notifications(icon, item):
     assoc = load_associations()
     assoc["notifications_enabled"] = not assoc.get("notifications_enabled", True)
@@ -949,6 +960,7 @@ def build_tray_menu():
         ),
         pystray.MenuItem("Effects", pystray.Menu(*effect_items)),
         pystray.MenuItem("Polling Rate", pystray.Menu(*polling_items)),
+        pystray.MenuItem("Force Refresh", on_force_refresh),
         pystray.MenuItem(
             lambda item: "Disable Watcher" if watcher.is_running else "Enable Watcher",
             on_toggle_watcher,
