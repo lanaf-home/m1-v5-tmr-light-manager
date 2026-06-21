@@ -527,6 +527,14 @@
         <select id="pollingRateSelect"></select>
       </div>
 
+      <div class="section">
+        <label>Keyboard Profile</label>
+        <select id="kbProfileSelect">
+          <option value="1">Profile 1</option>
+          <option value="2">Profile 2</option>
+        </select>
+      </div>
+
       <div class="section" id="brightnessSection">
         <label>Brightness</label>
         <div class="slider-row">
@@ -614,6 +622,9 @@ async function init() {
   rates.forEach(r => prSel.appendChild(new Option(r + " Hz", r)));
   prSel.value = 1000;
   prSel.addEventListener("change", onPollingRateChange);
+
+  // Keyboard profile dropdown
+  document.getElementById("kbProfileSelect").addEventListener("change", onKbProfileChange);
 
   await refreshAssociations();
   drawHueBar();
@@ -802,11 +813,13 @@ function renderProgramList() {
   const defExe = associations.default_exe || "explorer.exe";
   const defDisplay = effects.find(e => e.id === defEff)?.display || defEff;
   const pollingRates = associations.polling_rates || {};
+  const kbProfiles = associations.keyboard_profiles || {};
   const defRate = pollingRates["__default__"] || 1000;
+  const defKbProf = kbProfiles["__default__"] || 1;
   const defItem = document.createElement("div");
   defItem.className = "prog-item default-item" + (selectedItem === "__default__" ? " selected" : "");
   defItem.onclick = () => selectItem("__default__");
-  defItem.innerHTML = `<div class="prog-info"><div class="prog-name">\u2328 Default (${defExe})</div><div class="prog-effect">${defDisplay} · ${defRate}Hz</div></div>`;
+  defItem.innerHTML = `<div class="prog-info"><div class="prog-name">\u2328 Default (${defExe})</div><div class="prog-effect">${defDisplay} · ${defRate}Hz · P${defKbProf}</div></div>`;
   list.appendChild(defItem);
 
   // Program items
@@ -815,11 +828,12 @@ function renderProgramList() {
   for (const [exe, eff] of Object.entries(programs)) {
     const d = effects.find(e => e.id === eff)?.display || eff;
     const rate = pollingRates[exe] || defRate;
+    const kbProf = kbProfiles[exe] || defKbProf;
     const displayName = programNames[exe] || exe;
     const item = document.createElement("div");
     item.className = "prog-item" + (selectedItem === exe ? " selected" : "");
     item.onclick = () => selectItem(exe);
-    item.innerHTML = `<div class="prog-info"><div class="prog-name">${displayName}</div><div class="prog-effect">${exe} \u00B7 ${d} \u00B7 ${rate}Hz</div></div>` +
+    item.innerHTML = `<div class="prog-info"><div class="prog-name">${displayName}</div><div class="prog-effect">${exe} \u00B7 ${d} \u00B7 ${rate}Hz \u00B7 P${kbProf}</div></div>` +
       `<button class="prog-remove" onclick="event.stopPropagation(); removeProgram('${exe}')">\u2715</button>`;
     list.appendChild(item);
   }
@@ -853,6 +867,11 @@ function selectItem(itemId) {
   const profileKey = itemId === "__default__" ? "__default__" : itemId;
   const rate = pollingRates[profileKey] || pollingRates["__default__"] || 1000;
   document.getElementById("pollingRateSelect").value = rate;
+
+  // Load keyboard profile for this profile
+  const kbProfiles = associations.keyboard_profiles || {};
+  const kbProf = kbProfiles[profileKey] || kbProfiles["__default__"] || 1;
+  document.getElementById("kbProfileSelect").value = kbProf;
 
   // Load button only for default
   document.getElementById("loadBtn").classList.toggle("hidden", itemId !== "__default__");
@@ -937,6 +956,37 @@ async function onPollingRateChange() {
       statusEl.className = "status error";
     } else {
       statusEl.textContent = "Polling rate set to " + hz + " Hz";
+      statusEl.className = "status";
+    }
+  } catch (e) {
+    statusEl.textContent = "Connection error";
+    statusEl.className = "status error";
+  }
+  renderProgramList();
+}
+
+// ─── Keyboard profile change ───
+
+async function onKbProfileChange() {
+  const kbProfile = parseInt(document.getElementById("kbProfileSelect").value);
+  const profile = selectedItem === "__default__" ? "__default__" : selectedItem;
+  // Update local state
+  associations.keyboard_profiles = associations.keyboard_profiles || {};
+  associations.keyboard_profiles[profile] = kbProfile;
+  // Save & send to keyboard
+  const statusEl = document.getElementById("status");
+  try {
+    const res = await fetch(API + "/api/keyboard-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keyboard_profile: kbProfile, profile }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      statusEl.textContent = "Profile error: " + data.error;
+      statusEl.className = "status error";
+    } else {
+      statusEl.textContent = "Keyboard profile set to " + kbProfile;
       statusEl.className = "status";
     }
   } catch (e) {

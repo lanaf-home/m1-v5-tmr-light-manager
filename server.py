@@ -291,6 +291,35 @@ def send_polling_rate(hz):
     return False
 
 
+def build_profile_switch_packet(profile):
+    """Build a packet to switch keyboard profile. profile: 1, 2, or 3."""
+    profile_index = profile - 1  # 0-based
+    header = [0x04, profile_index, 0x00, 0x00, 0x00, 0x00, 0x00]
+    return build_packet(header)
+
+
+def send_profile_switch(profile):
+    """Send a profile switch command to the keyboard (sent twice for reliability)."""
+    if profile not in (1, 2):
+        return False
+    payload = build_profile_switch_packet(profile)
+    label = f"profile_{profile}"
+    ok = False
+    if _try_send_hid(payload, VENDOR_ID, WIRED_PID, label, "wired"):
+        ok = True
+    elif _try_send_hid(payload, VENDOR_ID, WIRELESS_PID, label, "wireless"):
+        ok = True
+    if ok:
+        # Send a second time after a short gap to ensure the keyboard registers it.
+        time.sleep(0.05)
+        _try_send_hid(payload, VENDOR_ID, WIRED_PID, label + "_retry", "wired") or \
+            _try_send_hid(payload, VENDOR_ID, WIRELESS_PID, label + "_retry", "wireless")
+        return True
+    if DEBUG_MODE:
+        logger.warning(f"Keyboard not found for {label} (tried wired & wireless)")
+    return False
+
+
 # ─── Program associations ─────────────────────
 
 def load_associations():
@@ -339,6 +368,12 @@ def load_associations():
         if isinstance(k, str) and isinstance(v, int) and v in POLLING_RATE_MAP:
             polling_rates[k if k == "__default__" else k.lower()] = v
 
+    # Keyboard profiles (1 or 2) per program
+    keyboard_profiles = {}
+    for k, v in _as_dict(raw.get("keyboard_profiles")).items():
+        if isinstance(k, str) and isinstance(v, int) and v in (1, 2):
+            keyboard_profiles[k if k == "__default__" else k.lower()] = v
+
     def _as_int(v, default, lo=None, hi=None):
         if not isinstance(v, int) or isinstance(v, bool):
             return default
@@ -352,6 +387,7 @@ def load_associations():
         "programs": programs,
         "program_names": program_names,
         "polling_rates": polling_rates,
+        "keyboard_profiles": keyboard_profiles,
         "enabled": _as_bool(raw.get("enabled"), True),
         "notifications_enabled": _as_bool(raw.get("notifications_enabled"), True),
         "notification_delay_seconds": _as_int(raw.get("notification_delay_seconds"), 0, lo=0, hi=60),
@@ -373,6 +409,7 @@ class ProcessWatcher:
         self._thread = None
         self._current_effect = None      # effect currently active
         self._current_rate = None        # polling rate currently active
+        self._current_kb_profile = None  # keyboard profile (1 or 2)
         self._current_profile = None     # exe name or None for Default
         self._last_send_time = 0         # rate limit
         self._pending_effect = None      # debounce: what we want to switch to
@@ -431,7 +468,7 @@ class ProcessWatcher:
         return exes
 
     def _resolve_effect(self):
-        """Determine which (effect, polling_rate, exe) should be active.
+        """Determine which (effect, polling_rate, kb_profile, exe) should be active.
 
         Rules (simplified):
           * If any mapped program exe is running → use that profile.
@@ -440,17 +477,19 @@ class ProcessWatcher:
         to be running (explorer.exe is essentially always running, so using it
         as a trigger would be useless).
 
-        Returns (effect_name, polling_rate_hz, matched_exe_or_None) when the
-        watcher is enabled, else (None, None, None).
+        Returns (effect_name, polling_rate_hz, kb_profile, matched_exe_or_None)
+        when the watcher is enabled, else (None, None, None, None).
         """
         assoc = load_associations()
         if not assoc.get("enabled", True):
-            return None, None, None
+            return None, None, None, None
 
         programs = assoc.get("programs", {})
         polling_rates = assoc.get("polling_rates", {})
+        keyboard_profiles = assoc.get("keyboard_profiles", {})
         default_effect = assoc.get("default_effect", "colorful_vh")
         default_rate = polling_rates.get("__default__", 1000)
+        default_kb_profile = keyboard_profiles.get("__default__", 1)
 
         if programs:
             running = self._get_running_exes()
@@ -458,13 +497,14 @@ class ProcessWatcher:
                 exe_lc = exe_name.lower()
                 if exe_lc in running:
                     rate = polling_rates.get(exe_lc, default_rate)
-                    return effect_name, rate, exe_lc
+                    kb_prof = keyboard_profiles.get(exe_lc, default_kb_profile)
+                    return effect_name, rate, kb_prof, exe_lc
 
         # Nothing mapped is running → default profile.
-        return default_effect, default_rate, None
+        return default_effect, default_rate, default_kb_profile, None
 
-    def _send_effect(self, effect_name, polling_rate_hz=None, force=False):
-        """Send effect (and optionally polling rate) to keyboard with rate limiting.
+    def _send_effect(self, effect_name, polling_rate_hz=None, kb_profile=None, force=False):
+        """Send effect (and optionally polling rate + keyboard profile) to keyboard.
 
         Returns True on a successful USB send, False otherwise (e.g. rate-limited
         or keyboard not found).
@@ -481,6 +521,13 @@ class ProcessWatcher:
             self._last_send_time = now
             display = EFFECT_DISPLAY_NAMES.get(effect_name, effect_name)
             msg = f"Watcher switched to: {display}"
+            # Send keyboard profile if changed (or if forced)
+            if kb_profile and (force or kb_profile != self._current_kb_profile):
+                time.sleep(0.3)
+                prof_ok = send_profile_switch(kb_profile)
+                if prof_ok:
+                    self._current_kb_profile = kb_profile
+                    msg += f" [Profile {kb_profile}]"
             # Send polling rate if changed (or if forced), with a gap so
             # the keyboard firmware has time to process the effect packet.
             if polling_rate_hz and (force or polling_rate_hz != self._current_rate):
@@ -529,7 +576,7 @@ class ProcessWatcher:
                 self._force_resend = False
 
             try:
-                target, target_rate, target_exe = self._resolve_effect()
+                target, target_rate, target_kb_prof, target_exe = self._resolve_effect()
                 if target is None:
                     time.sleep(self.POLL_INTERVAL)
                     continue
@@ -541,8 +588,8 @@ class ProcessWatcher:
                     # Settings or mapping changed externally — re-apply now,
                     # bypassing debounce and rate limit.
                     effect_changed = target != self._current_effect
-                    print(f"[watcher] force-resend target={target} exe={target_exe} rate={target_rate}")
-                    if self._send_effect(target, target_rate, force=True):
+                    print(f"[watcher] force-resend target={target} exe={target_exe} rate={target_rate} kb_prof={target_kb_prof}")
+                    if self._send_effect(target, target_rate, target_kb_prof, force=True):
                         self._current_profile = target_exe
                         self._pending_effect = None
                         self._pending_rate = None
@@ -551,16 +598,18 @@ class ProcessWatcher:
                         # same profile (e.g. brightness tweak) shouldn't spam.
                         if profile_changed or effect_changed:
                             self._record_switch(target, target_exe, target_rate)
-                elif profile_changed or target != self._current_effect or target_rate != self._current_rate:
+                elif (profile_changed or target != self._current_effect
+                      or target_rate != self._current_rate
+                      or target_kb_prof != self._current_kb_profile):
                     # New target detected — start debounce
                     if target != self._pending_effect or target_rate != self._pending_rate:
                         self._pending_effect = target
                         self._pending_rate = target_rate
                         self._pending_since = now
-                        print(f"[watcher] pending switch: cur={self._current_effect}/{self._current_profile} -> {target}/{target_exe} @ {target_rate}Hz (debouncing)")
+                        print(f"[watcher] pending switch: cur={self._current_effect}/{self._current_profile} -> {target}/{target_exe} @ {target_rate}Hz prof={target_kb_prof} (debouncing)")
                     elif now - self._pending_since >= self.DEBOUNCE_TIME:
                         # Debounce passed — commit the switch
-                        if self._send_effect(target, target_rate):
+                        if self._send_effect(target, target_rate, target_kb_prof):
                             self._current_profile = target_exe  # None = Default
                             self._pending_effect = None
                             self._pending_rate = None
@@ -683,6 +732,10 @@ def api_set_associations():
         if assoc.get("polling_rates") != data["polling_rates"]:
             mapping_changed = True
         assoc["polling_rates"] = data["polling_rates"]
+    if "keyboard_profiles" in data:
+        if assoc.get("keyboard_profiles") != data["keyboard_profiles"]:
+            mapping_changed = True
+        assoc["keyboard_profiles"] = data["keyboard_profiles"]
     if "enabled" in data:
         assoc["enabled"] = data["enabled"]
     if "program_names" in data:
@@ -740,6 +793,7 @@ def api_remove_program():
     assoc.get("programs", {}).pop(exe, None)
     assoc.get("polling_rates", {}).pop(exe, None)
     assoc.get("program_names", {}).pop(exe, None)
+    assoc.get("keyboard_profiles", {}).pop(exe, None)
     save_associations(assoc)
     if existed and watcher.is_running:
         watcher.request_resend()
@@ -771,6 +825,29 @@ def api_set_polling_rate():
             if active_profile == profile:
                 watcher._current_rate = hz
         return jsonify({"status": "ok", "hz": hz})
+    else:
+        return jsonify({"error": "Could not find keyboard"}), 500
+
+
+@app.route("/api/keyboard-profile", methods=["POST"])
+def api_set_keyboard_profile():
+    data = request.get_json()
+    kb_profile = data.get("keyboard_profile")
+    profile = data.get("profile", "__default__")  # "__default__" or exe name
+    if kb_profile not in (1, 2):
+        return jsonify({"error": f"Invalid keyboard profile: {kb_profile}"}), 400
+    # Save to associations
+    assoc = load_associations()
+    assoc.setdefault("keyboard_profiles", {})[profile] = kb_profile
+    save_associations(assoc)
+    # Send to keyboard immediately
+    ok = send_profile_switch(kb_profile)
+    if ok:
+        if watcher.is_running:
+            active_profile = watcher._current_profile or "__default__"
+            if active_profile == profile:
+                watcher._current_kb_profile = kb_profile
+        return jsonify({"status": "ok", "keyboard_profile": kb_profile})
     else:
         return jsonify({"error": "Could not find keyboard"}), 500
 
@@ -869,9 +946,12 @@ def _fire_tray_notification(info):
     profile = info.get("profile_name") or "Default"
     effect  = info.get("effect_display") or info.get("effect") or ""
     rate    = info.get("polling_rate")
+    kb_prof = watcher._current_kb_profile
     body = f"Now active: {profile}\n{effect}"
     if rate:
         body += f" @ {rate}Hz"
+    if kb_prof:
+        body += f" · P{kb_prof}"
     try:
         _tray_icon.notify(body, "Profile switched")
     except Exception as e:
@@ -885,6 +965,12 @@ def _on_profile_switched(info):
     the pending one is cancelled so the user only ever sees the latest profile.
     """
     global _notify_timer
+    # Force the tray menu to re-evaluate dynamic labels (e.g. "Active: ...")
+    if _tray_icon is not None:
+        try:
+            _tray_icon.update_menu()
+        except Exception:
+            pass
     if not _notifications_enabled() or _tray_icon is None:
         return
     # Cancel any in-flight scheduled notification.
@@ -921,15 +1007,23 @@ def on_test_notification(icon, item):
 
 
 def _get_active_profile_label():
-    """Return a label like 'Active: DOOM' or 'Active: Default' for the tray menu."""
+    """Return a label like 'Active: DOOM · 1000Hz · P1' for the tray menu."""
     if not watcher.is_running:
         return "Watcher disabled"
     exe = watcher._current_profile
+    rate = watcher._current_rate
+    kb_prof = watcher._current_kb_profile
     if exe is None:
-        return "Active: Default"
-    assoc = load_associations()
-    name = assoc.get("program_names", {}).get(exe, exe)
-    return f"Active: {name}"
+        name = "Default"
+    else:
+        assoc = load_associations()
+        name = assoc.get("program_names", {}).get(exe, exe)
+    parts = [f"Active: {name}"]
+    if rate:
+        parts.append(f"{rate}Hz")
+    if kb_prof:
+        parts.append(f"P{kb_prof}")
+    return " \u00B7 ".join(parts)
 
 
 def build_tray_menu():
@@ -951,6 +1045,14 @@ def build_tray_menu():
             return cb
         polling_items.append(pystray.MenuItem(f"{hz} Hz", make_rate_callback(hz)))
 
+    profile_items = []
+    for p in (1, 2):
+        def make_profile_callback(prof):
+            def cb(icon, item):
+                send_profile_switch(prof)
+            return cb
+        profile_items.append(pystray.MenuItem(f"Profile {p}", make_profile_callback(p)))
+
     return pystray.Menu(
         pystray.MenuItem("Open GUI", on_open_gui, default=True),
         pystray.MenuItem(
@@ -960,6 +1062,7 @@ def build_tray_menu():
         ),
         pystray.MenuItem("Effects", pystray.Menu(*effect_items)),
         pystray.MenuItem("Polling Rate", pystray.Menu(*polling_items)),
+        pystray.MenuItem("Switch Profile", pystray.Menu(*profile_items)),
         pystray.MenuItem("Force Refresh", on_force_refresh),
         pystray.MenuItem(
             lambda item: "Disable Watcher" if watcher.is_running else "Enable Watcher",
